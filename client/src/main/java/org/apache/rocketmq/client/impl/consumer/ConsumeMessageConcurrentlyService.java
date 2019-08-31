@@ -23,6 +23,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
@@ -53,6 +54,7 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
     private final DefaultMQPushConsumerImpl defaultMQPushConsumerImpl;
     private final DefaultMQPushConsumer defaultMQPushConsumer;
     private final MessageListenerConcurrently messageListener;
+    private final ConsumeExecutorSelector consumeExecutorSelector;
     private final BlockingQueue<Runnable> consumeRequestQueue;
     private final ThreadPoolExecutor consumeExecutor;
     private final String consumerGroup;
@@ -69,16 +71,33 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
         this.consumerGroup = this.defaultMQPushConsumer.getConsumerGroup();
         this.consumeRequestQueue = new LinkedBlockingQueue<Runnable>();
 
-        this.consumeExecutor = new ThreadPoolExecutor(
+        this.consumeExecutorSelector = initConsumeExecutorSelector();
+        this.consumeExecutor = this.consumeExecutorSelector == null ? new ThreadPoolExecutor(
             this.defaultMQPushConsumer.getConsumeThreadMin(),
             this.defaultMQPushConsumer.getConsumeThreadMax(),
             1000 * 60,
             TimeUnit.MILLISECONDS,
             this.consumeRequestQueue,
-            new ThreadFactoryImpl("ConsumeMessageThread_"));
+            new ThreadFactoryImpl("ConsumeMessageThread_"))
+            : null;
 
         this.scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("ConsumeMessageScheduledThread_"));
         this.cleanExpireMsgExecutors = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("CleanExpireMsgScheduledThread_"));
+    }
+
+    private ConsumeExecutorSelector initConsumeExecutorSelector() {
+        Class<? extends ConsumeExecutorSelector> consumeExecutorSelectorClass = this.defaultMQPushConsumer.getConsumeExecutorSelectorClass();
+        if (consumeExecutorSelectorClass == null) {
+            return null;
+        }
+        try {
+            return consumeExecutorSelectorClass.newInstance();
+        } catch (InstantiationException e) {
+            log.error("newInstance failed for {}, InstantiationException", consumeExecutorSelectorClass.getName());
+        } catch (IllegalAccessException e) {
+            log.error("newInstance failed for {}, IllegalAccessException", consumeExecutorSelectorClass.getName());
+        }
+        return null;
     }
 
     public void start() {
@@ -94,7 +113,12 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
 
     public void shutdown() {
         this.scheduledExecutorService.shutdown();
-        this.consumeExecutor.shutdown();
+        if (this.consumeExecutorSelector != null) {
+            this.consumeExecutorSelector.shutdownUnderlyingExecutors();
+        }
+        if (this.consumeExecutor != null) {
+            this.consumeExecutor.shutdown();
+        }
         this.cleanExpireMsgExecutors.shutdown();
     }
 
@@ -103,7 +127,9 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
         if (corePoolSize > 0
             && corePoolSize <= Short.MAX_VALUE
             && corePoolSize < this.defaultMQPushConsumer.getConsumeThreadMax()) {
-            this.consumeExecutor.setCorePoolSize(corePoolSize);
+            if (this.consumeExecutor != null) {
+                this.consumeExecutor.setCorePoolSize(corePoolSize);
+            }
         }
     }
 
@@ -139,7 +165,11 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
 
     @Override
     public int getCorePoolSize() {
-        return this.consumeExecutor.getCorePoolSize();
+        if (this.consumeExecutorSelector != null) {
+            return this.consumeExecutorSelector.getCorePoolSize();
+        } else {
+            return this.consumeExecutor.getCorePoolSize();
+        }
     }
 
     @Override
@@ -203,11 +233,12 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
         final ProcessQueue processQueue,
         final MessageQueue messageQueue,
         final boolean dispatchToConsume) {
+        final ExecutorService executorService = this.consumeExecutorSelector != null ? this.consumeExecutorSelector.selectExecutor(msgs) : this.consumeExecutor;
         final int consumeBatchSize = this.defaultMQPushConsumer.getConsumeMessageBatchMaxSize();
         if (msgs.size() <= consumeBatchSize) {
             ConsumeRequest consumeRequest = new ConsumeRequest(msgs, processQueue, messageQueue);
             try {
-                this.consumeExecutor.submit(consumeRequest);
+                executorService.submit(consumeRequest);
             } catch (RejectedExecutionException e) {
                 this.submitConsumeRequestLater(consumeRequest);
             }
@@ -224,7 +255,7 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
 
                 ConsumeRequest consumeRequest = new ConsumeRequest(msgThis, processQueue, messageQueue);
                 try {
-                    this.consumeExecutor.submit(consumeRequest);
+                    executorService.submit(consumeRequest);
                 } catch (RejectedExecutionException e) {
                     for (; total < msgs.size(); total++) {
                         msgThis.add(msgs.get(total));
@@ -235,7 +266,6 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
             }
         }
     }
-
 
     private void cleanExpireMsg() {
         Iterator<Map.Entry<MessageQueue, ProcessQueue>> it =

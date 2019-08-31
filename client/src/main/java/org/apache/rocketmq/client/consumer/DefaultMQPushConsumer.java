@@ -28,6 +28,7 @@ import org.apache.rocketmq.client.consumer.rebalance.AllocateMessageQueueAverage
 import org.apache.rocketmq.client.consumer.store.OffsetStore;
 import org.apache.rocketmq.client.exception.MQBrokerException;
 import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.client.impl.consumer.ConsumeExecutorSelector;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl;
 import org.apache.rocketmq.client.log.ClientLogger;
 import org.apache.rocketmq.client.trace.AsyncTraceDispatcher;
@@ -152,6 +153,11 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
      * Offset Storage
      */
     private OffsetStore offsetStore;
+
+    /**
+     * ConsumeExecutorSelector implementation Class
+     */
+    private Class<? extends ConsumeExecutorSelector> consumeExecutorSelectorClass;
 
     /**
      * Minimum consumer thread number
@@ -527,6 +533,15 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
 
     public void setConsumerGroup(String consumerGroup) {
         this.consumerGroup = consumerGroup;
+    }
+
+    public Class<? extends ConsumeExecutorSelector> getConsumeExecutorSelectorClass() {
+        return consumeExecutorSelectorClass;
+    }
+
+    public void setConsumeExecutorSelectorClass(
+        Class<? extends ConsumeExecutorSelector> consumeExecutorSelectorClass) {
+        this.consumeExecutorSelectorClass = consumeExecutorSelectorClass;
     }
 
     public int getConsumeThreadMax() {
