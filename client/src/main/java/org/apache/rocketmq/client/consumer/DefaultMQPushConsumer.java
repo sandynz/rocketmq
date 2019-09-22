@@ -157,7 +157,7 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     /**
      * ConsumeExecutorSelector implementation Class
      */
-    private Class<? extends ConsumeExecutorSelector> consumeExecutorSelectorClass;
+    private ConsumeExecutorSelector consumeExecutorSelector;
 
     /**
      * Minimum consumer thread number
@@ -535,13 +535,12 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
         this.consumerGroup = consumerGroup;
     }
 
-    public Class<? extends ConsumeExecutorSelector> getConsumeExecutorSelectorClass() {
-        return consumeExecutorSelectorClass;
+    public ConsumeExecutorSelector getConsumeExecutorSelector() {
+        return consumeExecutorSelector;
     }
 
-    public void setConsumeExecutorSelectorClass(
-        Class<? extends ConsumeExecutorSelector> consumeExecutorSelectorClass) {
-        this.consumeExecutorSelectorClass = consumeExecutorSelectorClass;
+    public void setConsumeExecutorSelector(ConsumeExecutorSelector consumeExecutorSelector) {
+        this.consumeExecutorSelector = consumeExecutorSelector;
     }
 
     public int getConsumeThreadMax() {

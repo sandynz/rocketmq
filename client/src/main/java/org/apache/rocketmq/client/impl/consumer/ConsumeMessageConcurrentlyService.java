@@ -71,7 +71,7 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
         this.consumerGroup = this.defaultMQPushConsumer.getConsumerGroup();
         this.consumeRequestQueue = new LinkedBlockingQueue<Runnable>();
 
-        this.consumeExecutorSelector = initConsumeExecutorSelector();
+        this.consumeExecutorSelector = this.defaultMQPushConsumer.getConsumeExecutorSelector();
         this.consumeExecutor = this.consumeExecutorSelector == null ? new ThreadPoolExecutor(
             this.defaultMQPushConsumer.getConsumeThreadMin(),
             this.defaultMQPushConsumer.getConsumeThreadMax(),
@@ -83,21 +83,6 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
 
         this.scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("ConsumeMessageScheduledThread_"));
         this.cleanExpireMsgExecutors = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("CleanExpireMsgScheduledThread_"));
-    }
-
-    private ConsumeExecutorSelector initConsumeExecutorSelector() {
-        Class<? extends ConsumeExecutorSelector> consumeExecutorSelectorClass = this.defaultMQPushConsumer.getConsumeExecutorSelectorClass();
-        if (consumeExecutorSelectorClass == null) {
-            return null;
-        }
-        try {
-            return consumeExecutorSelectorClass.newInstance();
-        } catch (InstantiationException e) {
-            log.error("newInstance failed for {}, InstantiationException", consumeExecutorSelectorClass.getName());
-        } catch (IllegalAccessException e) {
-            log.error("newInstance failed for {}, IllegalAccessException", consumeExecutorSelectorClass.getName());
-        }
-        return null;
     }
 
     public void start() {
